@@ -585,7 +585,7 @@ static u32 ar9003_mci_wait_for_gpm(struct ath_hw *ah, u8 gpm_type,
 {
 	struct ath_common *common = ath9k_hw_common(ah);
 	struct ath9k_hw_mci *mci = &ah->btcoex_hw.mci;
-	u32 *p_gpm = NULL, mismatch = 0, more_data;
+	u32 *p_gpm = NULL, more_data;
 	u32 offset;
 	u8 recv_type = 0, recv_opcode = 0;
 	bool b_is_bt_cal_done = (gpm_type == MCI_GPM_BT_CAL_DONE);
@@ -656,7 +656,6 @@ static u32 ar9003_mci_wait_for_gpm(struct ath_hw *ah, u8 gpm_type,
 		} else {
 			ath_dbg(common, MCI, "MCI GPM subtype not match 0x%x\n",
 				*(p_gpm + 1));
-			mismatch++;
 			ar9003_mci_process_gpm_extra(ah, recv_type,
 						     recv_opcode, p_gpm);
 		}
@@ -1055,17 +1054,15 @@ void ar9003_mci_stop_bt(struct ath_hw *ah, bool save_fullsleep)
 static void ar9003_mci_send_2g5g_status(struct ath_hw *ah, bool wait_done)
 {
 	struct ath9k_hw_mci *mci = &ah->btcoex_hw.mci;
-	u32 new_flags, to_set, to_clear;
+	u32 to_set, to_clear;
 
 	if (!mci->update_2g5g || (mci->bt_state == MCI_BT_SLEEP))
 		return;
 
 	if (mci->is_2g) {
-		new_flags = MCI_2G_FLAGS;
 		to_clear = MCI_2G_FLAGS_CLEAR_MASK;
 		to_set = MCI_2G_FLAGS_SET_MASK;
 	} else {
-		new_flags = MCI_5G_FLAGS;
 		to_clear = MCI_5G_FLAGS_CLEAR_MASK;
 		to_set = MCI_5G_FLAGS_SET_MASK;
 	}

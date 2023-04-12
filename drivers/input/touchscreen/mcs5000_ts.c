@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * mcs5000_ts.c - Touchscreen driver for MELFAS MCS-5000 controller
  *
@@ -5,12 +6,6 @@
  * Author: Joonyoung Shim <jy0922.shim@samsung.com>
  *
  * Based on wm97xx-core.c
- *
- *  This program is free software; you can redistribute  it and/or modify it
- *  under  the terms of  the GNU General  Public License as published by the
- *  Free Software Foundation;  either version 2 of the  License, or (at your
- *  option) any later version.
- *
  */
 
 #include <linux/module.h>
@@ -185,8 +180,7 @@ static void mcs5000_ts_phys_init(struct mcs5000_ts_data *data,
 			OP_MODE_ACTIVE | REPORT_RATE_80);
 }
 
-static int mcs5000_ts_probe(struct i2c_client *client,
-			    const struct i2c_device_id *id)
+static int mcs5000_ts_probe(struct i2c_client *client)
 {
 	const struct mcs_platform_data *pdata;
 	struct mcs5000_ts_data *data;
@@ -277,7 +271,7 @@ static const struct i2c_device_id mcs5000_ts_id[] = {
 MODULE_DEVICE_TABLE(i2c, mcs5000_ts_id);
 
 static struct i2c_driver mcs5000_ts_driver = {
-	.probe		= mcs5000_ts_probe,
+	.probe_new	= mcs5000_ts_probe,
 	.driver = {
 		.name = "mcs5000_ts",
 		.pm   = &mcs5000_ts_pm,

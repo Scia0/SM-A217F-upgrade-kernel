@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * AD714X CapTouch Programmable Controller driver (I2C bus)
  *
  * Copyright 2009-2011 Analog Devices Inc.
- *
- * Licensed under the GPL-2 or later.
  */
 
 #include <linux/input.h>	/* BUS_I2C */
@@ -70,8 +69,7 @@ static int ad714x_i2c_read(struct ad714x_chip *chip,
 	return 0;
 }
 
-static int ad714x_i2c_probe(struct i2c_client *client,
-					const struct i2c_device_id *id)
+static int ad714x_i2c_probe(struct i2c_client *client)
 {
 	struct ad714x_chip *chip;
 
@@ -100,7 +98,7 @@ static struct i2c_driver ad714x_i2c_driver = {
 		.name = "ad714x_captouch",
 		.pm   = &ad714x_i2c_pm,
 	},
-	.probe    = ad714x_i2c_probe,
+	.probe_new = ad714x_i2c_probe,
 	.id_table = ad714x_id,
 };
 

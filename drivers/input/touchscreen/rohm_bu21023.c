@@ -1,15 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * ROHM BU21023/24 Dual touch support resistive touch screen driver
  * Copyright (C) 2012 ROHM CO.,LTD.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 #include <linux/delay.h>
 #include <linux/firmware.h>
@@ -1103,8 +1095,7 @@ static void rohm_ts_close(struct input_dev *input_dev)
 	ts->initialized = false;
 }
 
-static int rohm_bu21023_i2c_probe(struct i2c_client *client,
-				  const struct i2c_device_id *id)
+static int rohm_bu21023_i2c_probe(struct i2c_client *client)
 {
 	struct device *dev = &client->dev;
 	struct rohm_ts_data *ts;
@@ -1192,7 +1183,7 @@ static struct i2c_driver rohm_bu21023_i2c_driver = {
 	.driver = {
 		.name = BU21023_NAME,
 	},
-	.probe = rohm_bu21023_i2c_probe,
+	.probe_new = rohm_bu21023_i2c_probe,
 	.id_table = rohm_bu21023_i2c_id,
 };
 module_i2c_driver(rohm_bu21023_i2c_driver);

@@ -1,18 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * DRV2665 haptics driver family
  *
  * Author: Dan Murphy <dmurphy@ti.com>
  *
  * Copyright: (C) 2015 Texas Instruments, Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
  */
 
 #include <linux/i2c.h>
@@ -52,11 +44,11 @@
 
 /**
  * struct drv2665_data -
- * @input_dev - Pointer to the input device
- * @client - Pointer to the I2C client
- * @regmap - Register map of the device
- * @work - Work item used to off load the enable/disable of the vibration
- * @regulator - Pointer to the regulator for the IC
+ * @input_dev: Pointer to the input device
+ * @client: Pointer to the I2C client
+ * @regmap: Register map of the device
+ * @work: Work item used to off load the enable/disable of the vibration
+ * @regulator: Pointer to the regulator for the IC
  */
 struct drv2665_data {
 	struct input_dev *input_dev;
@@ -164,8 +156,7 @@ static const struct regmap_config drv2665_regmap_config = {
 	.cache_type = REGCACHE_NONE,
 };
 
-static int drv2665_probe(struct i2c_client *client,
-			 const struct i2c_device_id *id)
+static int drv2665_probe(struct i2c_client *client)
 {
 	struct drv2665_data *haptics;
 	int error;
@@ -238,7 +229,7 @@ static int __maybe_unused drv2665_suspend(struct device *dev)
 
 	mutex_lock(&haptics->input_dev->mutex);
 
-	if (haptics->input_dev->users) {
+	if (input_device_enabled(haptics->input_dev)) {
 		ret = regmap_update_bits(haptics->regmap, DRV2665_CTRL_2,
 					 DRV2665_STANDBY, DRV2665_STANDBY);
 		if (ret) {
@@ -267,7 +258,7 @@ static int __maybe_unused drv2665_resume(struct device *dev)
 
 	mutex_lock(&haptics->input_dev->mutex);
 
-	if (haptics->input_dev->users) {
+	if (input_device_enabled(haptics->input_dev)) {
 		ret = regulator_enable(haptics->regulator);
 		if (ret) {
 			dev_err(dev, "Failed to enable regulator\n");
@@ -306,7 +297,7 @@ MODULE_DEVICE_TABLE(of, drv2665_of_match);
 #endif
 
 static struct i2c_driver drv2665_driver = {
-	.probe		= drv2665_probe,
+	.probe_new	= drv2665_probe,
 	.driver		= {
 		.name	= "drv2665-haptics",
 		.of_match_table = of_match_ptr(drv2665_of_match),

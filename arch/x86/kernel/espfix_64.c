@@ -1,15 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* ----------------------------------------------------------------------- *
  *
  *   Copyright 2014 Intel Corporation; author: H. Peter Anvin
- *
- *   This program is free software; you can redistribute it and/or modify it
- *   under the terms and conditions of the GNU General Public License,
- *   version 2, as published by the Free Software Foundation.
- *
- *   This program is distributed in the hope it will be useful, but WITHOUT
- *   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- *   FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- *   more details.
  *
  * ----------------------------------------------------------------------- */
 
@@ -37,7 +29,7 @@
 #include <linux/percpu.h>
 #include <linux/gfp.h>
 #include <linux/random.h>
-#include <asm/pgtable.h>
+#include <linux/pgtable.h>
 #include <asm/pgalloc.h>
 #include <asm/setup.h>
 #include <asm/espfix.h>
@@ -102,17 +94,7 @@ static inline unsigned long espfix_base_addr(unsigned int cpu)
 
 static void init_espfix_random(void)
 {
-	unsigned long rand;
-
-	/*
-	 * This is run before the entropy pools are initialized,
-	 * but this is hopefully better than nothing.
-	 */
-	if (!arch_get_random_long(&rand)) {
-		/* The constant is an arbitrary large prime */
-		rand = rdtsc();
-		rand *= 0xc345c6b72fd16123UL;
-	}
+	unsigned long rand = get_random_long();
 
 	slot_random = rand % ESPFIX_STACKS_PER_PAGE;
 	page_random = (rand / ESPFIX_STACKS_PER_PAGE)

@@ -1,441 +1,210 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2014 Samsung Electronics Co., Ltd.
+ * Copyright (c) 2019 Samsung Electronics Co., Ltd.
  *	      http://www.samsung.com/
+ * Copyright (c) 2020 Krzysztof Kozlowski <krzk@kernel.org>
  *
- * EXYNOS - CHIP ID support
+ * Exynos - CHIP ID support
  * Author: Pankaj Dubey <pankaj.dubey@samsung.com>
+ * Author: Bartlomiej Zolnierkiewicz <b.zolnierkie@samsung.com>
+ * Author: Krzysztof Kozlowski <krzk@kernel.org>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * Samsung Exynos SoC Adaptive Supply Voltage and Chip ID support
  */
 
-#include <linux/io.h>
+#include <linux/device.h>
+#include <linux/errno.h>
+#include <linux/mfd/syscon.h>
+#include <linux/module.h>
 #include <linux/of.h>
-#include <linux/of_address.h>
-#include <linux/of_platform.h>
+#include <linux/of_device.h>
 #include <linux/platform_device.h>
+#include <linux/regmap.h>
 #include <linux/slab.h>
+#include <linux/soc/samsung/exynos-chipid.h>
 #include <linux/sys_soc.h>
-#include <linux/soc/samsung/exynos-soc.h>
 
-struct exynos_chipid_info exynos_soc_info;
-EXPORT_SYMBOL(exynos_soc_info);
+#include "exynos-asv.h"
 
-static long board_rev;
+struct exynos_chipid_variant {
+	unsigned int rev_reg;		/* revision register offset */
+	unsigned int main_rev_shift;	/* main revision offset in rev_reg */
+	unsigned int sub_rev_shift;	/* sub revision offset in rev_reg */
+};
 
-static int __init get_revision(char *str)
+struct exynos_chipid_info {
+	u32 product_id;
+	u32 revision;
+};
+
+static const struct exynos_soc_id {
+	const char *name;
+	unsigned int id;
+} soc_ids[] = {
+	/* List ordered by SoC name */
+	/* Compatible with: samsung,exynos4210-chipid */
+	{ "EXYNOS3250", 0xE3472000 },
+	{ "EXYNOS4210", 0x43200000 },	/* EVT0 revision */
+	{ "EXYNOS4210", 0x43210000 },
+	{ "EXYNOS4212", 0x43220000 },
+	{ "EXYNOS4412", 0xE4412000 },
+	{ "EXYNOS5250", 0x43520000 },
+	{ "EXYNOS5260", 0xE5260000 },
+	{ "EXYNOS5410", 0xE5410000 },
+	{ "EXYNOS5420", 0xE5420000 },
+	{ "EXYNOS5433", 0xE5433000 },
+	{ "EXYNOS5440", 0xE5440000 },
+	{ "EXYNOS5800", 0xE5422000 },
+	{ "EXYNOS7420", 0xE7420000 },
+	/* Compatible with: samsung,exynos850-chipid */
+	{ "EXYNOS7885", 0xE7885000 },
+	{ "EXYNOS850", 0xE3830000 },
+	{ "EXYNOSAUTOV9", 0xAAA80000 },
+};
+
+static const char *product_id_to_soc_id(unsigned int product_id)
 {
-	int res = 0;
-	res  = kstrtol(str, 16, &board_rev);
-	if (res)
-		pr_info("%s: Get Board Revision fail!!\n", __func__);
-	else
-		pr_info("Board Revision = 0x%lx\n", board_rev);
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(soc_ids); i++)
+		if (product_id == soc_ids[i].id)
+			return soc_ids[i].name;
+	return NULL;
+}
+
+static int exynos_chipid_get_chipid_info(struct regmap *regmap,
+		const struct exynos_chipid_variant *data,
+		struct exynos_chipid_info *soc_info)
+{
+	int ret;
+	unsigned int val, main_rev, sub_rev;
+
+	ret = regmap_read(regmap, EXYNOS_CHIPID_REG_PRO_ID, &val);
+	if (ret < 0)
+		return ret;
+	soc_info->product_id = val & EXYNOS_MASK;
+
+	if (data->rev_reg != EXYNOS_CHIPID_REG_PRO_ID) {
+		ret = regmap_read(regmap, data->rev_reg, &val);
+		if (ret < 0)
+			return ret;
+	}
+	main_rev = (val >> data->main_rev_shift) & EXYNOS_REV_PART_MASK;
+	sub_rev = (val >> data->sub_rev_shift) & EXYNOS_REV_PART_MASK;
+	soc_info->revision = (main_rev << EXYNOS_REV_PART_SHIFT) | sub_rev;
+
 	return 0;
 }
 
-early_param("revision", get_revision);
-
-static const char * __init product_id_to_name(unsigned int product_id)
+static int exynos_chipid_probe(struct platform_device *pdev)
 {
-	const char *soc_name;
-	unsigned int soc_id = product_id;
-
-	switch (soc_id) {
-	case EXYNOS3250_SOC_ID:
-		soc_name = "EXYNOS3250";
-		break;
-	case EXYNOS3830_SOC_ID:
-		soc_name = "EXYNOS3830";
-		break;
-	case EXYNOS4210_SOC_ID:
-		soc_name = "EXYNOS4210";
-		break;
-	case EXYNOS4212_SOC_ID:
-		soc_name = "EXYNOS4212";
-		break;
-	case EXYNOS4412_SOC_ID:
-		soc_name = "EXYNOS4412";
-		break;
-	case EXYNOS4415_SOC_ID:
-		soc_name = "EXYNOS4415";
-		break;
-	case EXYNOS5250_SOC_ID:
-		soc_name = "EXYNOS5250";
-		break;
-	case EXYNOS5260_SOC_ID:
-		soc_name = "EXYNOS5260";
-		break;
-	case EXYNOS5420_SOC_ID:
-		soc_name = "EXYNOS5420";
-		break;
-	case EXYNOS5440_SOC_ID:
-		soc_name = "EXYNOS5440";
-		break;
-	case EXYNOS5800_SOC_ID:
-		soc_name = "EXYNOS5800";
-		break;
-	case EXYNOS7872_SOC_ID:
-		soc_name = "EXYNOS7872";
-		break;
-	case EXYNOS8890_SOC_ID:
-		soc_name = "EXYNOS8890";
-		break;
-	case EXYNOS8895_SOC_ID:
-		soc_name = "EXYNOS8895";
-		break;
-	case EXYNOS9810_SOC_ID:
-		soc_name = "EXYNOS9810";
-		break;
-	case EXYNOS9630_SOC_ID:
-		soc_name = "EXYNOS9630";
-		break;
-	default:
-		soc_name = "UNKNOWN";
-	}
-	return soc_name;
-}
-static const struct exynos_chipid_variant drv_data_exynos8890 = {
-	.product_ver	= 1,
-	.unique_id_reg	= 0x14,
-	.rev_reg	= 0x0,
-	.main_rev_bit	= 0,
-	.sub_rev_bit	= 4,
-};
-
-static const struct exynos_chipid_variant drv_data_exynos8895 = {
-	.product_ver	= 1,
-	.unique_id_reg	= 0x04,
-	.rev_reg	= 0x10,
-	.main_rev_bit	= 20,
-	.sub_rev_bit	= 16,
-};
-
-static const struct exynos_chipid_variant drv_data_exynos7872 = {
-	.product_ver	= 2,
-	.unique_id_reg	= 0x04,
-	.rev_reg	= 0x10,
-	.main_rev_bit	= 20,
-	.sub_rev_bit	= 16,
-};
-
-static const struct exynos_chipid_variant drv_data_exynos9810 = {
-	.product_ver	= 1,
-	.unique_id_reg	= 0x04,
-	.rev_reg	= 0x10,
-	.main_rev_bit	= 20,
-	.sub_rev_bit	= 16,
-};
-
-static const struct exynos_chipid_variant drv_data_exynos9 = {
-	.product_ver	= 1,
-	.unique_id_reg	= 0x04,
-	.rev_reg	= 0x10,
-	.main_rev_bit	= 20,
-	.sub_rev_bit	= 16,
-};
-
-static const struct of_device_id of_exynos_chipid_ids[] = {
-	{
-		.compatible	= "samsung,exynos8890-chipid",
-		.data		= &drv_data_exynos8890,
-	},
-	{
-		.compatible	= "samsung,exynos8895-chipid",
-		.data		= &drv_data_exynos8895,
-	},
-	{
-		.compatible	= "samsung,exynos7872-chipid",
-		.data		= &drv_data_exynos8895,
-	},
-	{
-		.compatible	= "samsung,exynos9810-chipid",
-		.data		= &drv_data_exynos9810,
-	},
-	{
-		.compatible	= "samsung,exynos9-chipid",
-		.data		= &drv_data_exynos9,
-	},
-	{},
-};
-
-static void __init exynos_chipid_get_chipid_info(void)
-{
-	const struct exynos_chipid_variant *data = exynos_soc_info.drv_data;
-	u64 val;
-
-	val = __raw_readl(exynos_soc_info.reg);
-
-	switch (data->product_ver) {
-	case 2:
-		exynos_soc_info.product_id = val & EXYNOS_SOC_MASK_V2;
-		break;
-	case 1:
-	default:
-		exynos_soc_info.product_id = val & EXYNOS_SOC_MASK;
-		break;
-	}
-
-	val = __raw_readl(exynos_soc_info.reg + data->rev_reg);
-	exynos_soc_info.main_rev = (val >> data->main_rev_bit) & EXYNOS_REV_MASK;
-	exynos_soc_info.sub_rev = (val >> data->sub_rev_bit) & EXYNOS_REV_MASK;
-	exynos_soc_info.revision = (exynos_soc_info.main_rev << 4) | exynos_soc_info.sub_rev;
-
-	val = __raw_readl(exynos_soc_info.reg + data->unique_id_reg);
-	val |= (u64)__raw_readl(exynos_soc_info.reg + data->unique_id_reg + 4) << 32UL;
-	exynos_soc_info.unique_id  = val;
-	exynos_soc_info.lot_id = val & EXYNOS_LOTID_MASK;
-}
-
-/**
- *  exynos_chipid_early_init: Early chipid initialization
- *  @dev: pointer to chipid device
- */
-void __init exynos_chipid_early_init(void)
-{
-	struct device_node *np;
-	const struct of_device_id *match;
-	void __iomem *reg;
-
-	if (exynos_soc_info.reg)
-		return;
-
-	np = of_find_matching_node_and_match(NULL, of_exynos_chipid_ids, &match);
-	if (!np || !match)
-		panic("%s, failed to find chipid node or match\n", __func__);
-
-	exynos_soc_info.drv_data = (struct exynos_chipid_variant *)match->data;
-	exynos_soc_info.reg = of_iomap(np, 0);
-	if (!exynos_soc_info.reg)
-		panic("%s: failed to map registers\n", __func__);
-
-	reg = of_iomap(np, 1);
-	if (!reg)
-		pr_err("%s: can't get base of memsize\n", __func__);
-	else
-		exynos_soc_info.memsize = __raw_readq(reg);
-
-	exynos_chipid_get_chipid_info();
-}
-
-static int __init exynos_chipid_probe(struct platform_device *pdev)
-{
+	const struct exynos_chipid_variant *drv_data;
+	struct exynos_chipid_info soc_info;
 	struct soc_device_attribute *soc_dev_attr;
 	struct soc_device *soc_dev;
 	struct device_node *root;
+	struct regmap *regmap;
 	int ret;
 
-	soc_dev_attr = kzalloc(sizeof(*soc_dev_attr), GFP_KERNEL);
+	drv_data = of_device_get_match_data(&pdev->dev);
+	if (!drv_data)
+		return -EINVAL;
+
+	regmap = device_node_to_regmap(pdev->dev.of_node);
+	if (IS_ERR(regmap))
+		return PTR_ERR(regmap);
+
+	ret = exynos_chipid_get_chipid_info(regmap, drv_data, &soc_info);
+	if (ret < 0)
+		return ret;
+
+	soc_dev_attr = devm_kzalloc(&pdev->dev, sizeof(*soc_dev_attr),
+				    GFP_KERNEL);
 	if (!soc_dev_attr)
-		return -ENODEV;
+		return -ENOMEM;
 
 	soc_dev_attr->family = "Samsung Exynos";
 
 	root = of_find_node_by_path("/");
-	ret = of_property_read_string(root, "model", &soc_dev_attr->machine);
+	of_property_read_string(root, "model", &soc_dev_attr->machine);
 	of_node_put(root);
-	if (ret)
-		goto free_soc;
 
-	soc_dev_attr->revision = kasprintf(GFP_KERNEL, "%d",
-					exynos_soc_info.revision);
-	if (!soc_dev_attr->revision)
-		goto free_soc;
+	soc_dev_attr->revision = devm_kasprintf(&pdev->dev, GFP_KERNEL,
+						"%x", soc_info.revision);
+	soc_dev_attr->soc_id = product_id_to_soc_id(soc_info.product_id);
+	if (!soc_dev_attr->soc_id) {
+		pr_err("Unknown SoC\n");
+		return -ENODEV;
+	}
 
-	soc_dev_attr->soc_id = product_id_to_name(exynos_soc_info.product_id);
+	/* please note that the actual registration will be deferred */
 	soc_dev = soc_device_register(soc_dev_attr);
 	if (IS_ERR(soc_dev))
-		goto free_rev;
+		return PTR_ERR(soc_dev);
 
-	soc_device_to_device(soc_dev);
-	dev_set_socdata(&pdev->dev, "Exynos", "ChipID");
-	dev_info(&pdev->dev, "CPU[%s] CPU_REV[0x%x] Detected\n",
-			product_id_to_name(exynos_soc_info.product_id),
-			exynos_soc_info.revision);
-	exynos_soc_info.pdev = pdev;
+	ret = exynos_asv_init(&pdev->dev, regmap);
+	if (ret)
+		goto err;
+
+	platform_set_drvdata(pdev, soc_dev);
+
+	dev_info(&pdev->dev, "Exynos: CPU[%s] PRO_ID[0x%x] REV[0x%x] Detected\n",
+		 soc_dev_attr->soc_id, soc_info.product_id, soc_info.revision);
+
 	return 0;
-free_rev:
-	kfree(soc_dev_attr->revision);
-free_soc:
-	kfree(soc_dev_attr);
-	return -EINVAL;
-}
 
-static struct platform_driver exynos_chipid_driver __refdata = {
-	.driver = {
-		.name = "exynos-chipid",
-		.of_match_table = of_exynos_chipid_ids,
-	},
-	.probe = exynos_chipid_probe,
-};
-
-static int __init exynos_chipid_init(void)
-{
-	exynos_chipid_early_init();
-	return platform_driver_register(&exynos_chipid_driver);
-}
-core_initcall(exynos_chipid_init);
-
-/*
- *  sysfs implementation for exynos-snapshot
- *  you can access the sysfs of exynos-snapshot to /sys/devices/system/chip-id
- *  path.
- */
-static struct bus_type chipid_subsys = {
-	.name = "chip-id",
-	.dev_name = "chip-id",
-};
-
-static ssize_t chipid_product_id_show(struct device *dev,
-			         struct device_attribute *attr, char *buf)
-{
-	return snprintf(buf, 10, "%08X\n", exynos_soc_info.product_id);
-}
-
-static ssize_t chipid_unique_id_show(struct device *dev,
-			         struct device_attribute *attr, char *buf)
-{
-	return snprintf(buf, 20, "%010LX\n", exynos_soc_info.unique_id);
-}
-
-static ssize_t chipid_lot_id_show(struct device *dev,
-			         struct device_attribute *attr, char *buf)
-{
-	return snprintf(buf, 14, "%08X\n", exynos_soc_info.lot_id);
-}
-
-static ssize_t chipid_revision_show(struct device *dev,
-			         struct device_attribute *attr, char *buf)
-{
-	return snprintf(buf, 14, "%08X\n", exynos_soc_info.revision);
-}
-
-static ssize_t chipid_evt_ver_show(struct device *dev,
-			         struct device_attribute *attr, char *buf)
-{
-	if (exynos_soc_info.revision == 0)
-		return snprintf(buf, 14, "EVT0\n");
-	else
-		return snprintf(buf, 14, "EVT%1X.%1X\n",
-				exynos_soc_info.main_rev,
-				exynos_soc_info.sub_rev);
-}
-
-static ssize_t chipid_memsize_show(struct device *dev,
-				struct device_attribute *attr, char *buf)
-{
-	return snprintf(buf, 20, "%llu\n", exynos_soc_info.memsize);
-}
-
-static ssize_t chipid_board_id_show(struct device *dev,
-			   struct device_attribute *attr, char *buf)
-{
-	return snprintf(buf, 14, "%ld", board_rev);
-}
-
-static struct device_attribute chipid_product_id_attr =
-        __ATTR(product_id, 0644, chipid_product_id_show, NULL);
-
-static struct device_attribute chipid_unique_id_attr =
-        __ATTR(unique_id, 0644, chipid_unique_id_show, NULL);
-
-static struct device_attribute chipid_lot_id_attr =
-        __ATTR(lot_id, 0644, chipid_lot_id_show, NULL);
-
-static struct device_attribute chipid_revision_attr =
-        __ATTR(revision, 0644, chipid_revision_show, NULL);
-
-static struct device_attribute chipid_evt_ver_attr =
-        __ATTR(evt_ver, 0644, chipid_evt_ver_show, NULL);
-
-static struct device_attribute chipid_memsize_attr =
-	__ATTR(memsize, 0440, chipid_memsize_show, NULL);
-
-static struct device_attribute chipid_board_id_attr =
-	__ATTR(board_id, 0644, chipid_board_id_show, NULL);
-
-static struct attribute *chipid_sysfs_attrs[] = {
-	&chipid_product_id_attr.attr,
-	&chipid_unique_id_attr.attr,
-	&chipid_lot_id_attr.attr,
-	&chipid_revision_attr.attr,
-	&chipid_evt_ver_attr.attr,
-	&chipid_memsize_attr.attr,
-	&chipid_board_id_attr.attr,
-	NULL,
-};
-
-static struct attribute_group chipid_sysfs_group = {
-	.attrs = chipid_sysfs_attrs,
-};
-
-static const struct attribute_group *chipid_sysfs_groups[] = {
-	&chipid_sysfs_group,
-	NULL,
-};
-
-static ssize_t svc_ap_show(struct kobject *kobj,
-			struct kobj_attribute *attr, char *buf)
-{
-	return snprintf(buf, 20, "%010llX\n",
-			(exynos_soc_info.unique_id));
-}
-
-static struct kobj_attribute svc_ap_attr =
-		__ATTR(SVC_AP, 0444, svc_ap_show, NULL);
-
-extern struct kset *devices_kset;
-
-void sysfs_create_svc_ap(void)
-{
-	struct kernfs_node *svc_sd;
-	struct kobject *data;
-	struct kobject *ap;
-
-	/* To find svc kobject */
-	svc_sd = sysfs_get_dirent(devices_kset->kobj.sd, "svc");
-	if (IS_ERR_OR_NULL(svc_sd)) {
-		/* try to create svc kobject */
-		data = kobject_create_and_add("svc", &devices_kset->kobj);
-		if (IS_ERR_OR_NULL(data))
-			pr_info("Existing path sys/devices/svc : 0x%pK\n", data);
-		else
-			pr_info("Created sys/devices/svc svc : 0x%pK\n", data);
-	} else {
-		data = (struct kobject *)svc_sd->priv;
-		pr_info("Found svc_sd : 0x%pK svc : 0x%pK\n", svc_sd, data);
-	}
-
-	ap = kobject_create_and_add("AP", data);
-	if (IS_ERR_OR_NULL(ap))
-		pr_info("Failed to create sys/devices/svc/AP : 0x%pK\n", ap);
-	else
-		pr_info("Success to create sys/devices/svc/AP : 0x%pK\n", ap);
-
-	if (sysfs_create_file(ap, &svc_ap_attr.attr) < 0) {
-		pr_err("failed to create sys/devices/svc/AP/SVC_AP, %s\n",
-		svc_ap_attr.attr.name);
-	}
-}
-
-static int __init chipid_sysfs_init(void)
-{
-	int ret = 0;
-
-	ret = subsys_system_register(&chipid_subsys, chipid_sysfs_groups);
-	if (ret) {
-		if (exynos_soc_info.pdev) {
-			dev_err(&exynos_soc_info.pdev->dev,
-				"fail to register exynos-snapshop subsys\n");
-		} else {
-			pr_err("fail to register exynos-snapshop subsys\n");
-		}
-	}
-
-	sysfs_create_svc_ap();
+err:
+	soc_device_unregister(soc_dev);
 
 	return ret;
 }
-late_initcall(chipid_sysfs_init);
 
+static int exynos_chipid_remove(struct platform_device *pdev)
+{
+	struct soc_device *soc_dev = platform_get_drvdata(pdev);
+
+	soc_device_unregister(soc_dev);
+
+	return 0;
+}
+
+static const struct exynos_chipid_variant exynos4210_chipid_drv_data = {
+	.rev_reg	= 0x0,
+	.main_rev_shift	= 4,
+	.sub_rev_shift	= 0,
+};
+
+static const struct exynos_chipid_variant exynos850_chipid_drv_data = {
+	.rev_reg	= 0x10,
+	.main_rev_shift	= 20,
+	.sub_rev_shift	= 16,
+};
+
+static const struct of_device_id exynos_chipid_of_device_ids[] = {
+	{
+		.compatible	= "samsung,exynos4210-chipid",
+		.data		= &exynos4210_chipid_drv_data,
+	}, {
+		.compatible	= "samsung,exynos850-chipid",
+		.data		= &exynos850_chipid_drv_data,
+	},
+	{ }
+};
+MODULE_DEVICE_TABLE(of, exynos_chipid_of_device_ids);
+
+static struct platform_driver exynos_chipid_driver = {
+	.driver = {
+		.name = "exynos-chipid",
+		.of_match_table = exynos_chipid_of_device_ids,
+	},
+	.probe	= exynos_chipid_probe,
+	.remove	= exynos_chipid_remove,
+};
+module_platform_driver(exynos_chipid_driver);
+
+MODULE_DESCRIPTION("Samsung Exynos ChipID controller and ASV driver");
+MODULE_AUTHOR("Bartlomiej Zolnierkiewicz <b.zolnierkie@samsung.com>");
+MODULE_AUTHOR("Krzysztof Kozlowski <krzk@kernel.org>");
+MODULE_AUTHOR("Pankaj Dubey <pankaj.dubey@samsung.com>");
+MODULE_AUTHOR("Sylwester Nawrocki <s.nawrocki@samsung.com>");
+MODULE_LICENSE("GPL");

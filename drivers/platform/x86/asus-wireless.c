@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Asus Wireless Radio Control Driver
  *
  * Copyright (C) 2015-2016 Endless Mobile, Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/kernel.h>
@@ -178,7 +175,7 @@ static int asus_wireless_add(struct acpi_device *adev)
 	return err;
 }
 
-static int asus_wireless_remove(struct acpi_device *adev)
+static void asus_wireless_remove(struct acpi_device *adev)
 {
 	struct asus_wireless_data *data = acpi_driver_data(adev);
 
@@ -186,7 +183,6 @@ static int asus_wireless_remove(struct acpi_device *adev)
 		devm_led_classdev_unregister(&adev->dev, &data->led);
 		destroy_workqueue(data->wq);
 	}
-	return 0;
 }
 
 static struct acpi_driver asus_wireless_driver = {

@@ -23,7 +23,7 @@ void pci_add_resource_offset(struct list_head *resources, struct resource *res,
 
 	entry = resource_list_create_entry(res, 0);
 	if (!entry) {
-		printk(KERN_ERR "PCI: can't add host bridge window %pR\n", res);
+		pr_err("PCI: can't add host bridge window %pR\n", res);
 		return;
 	}
 
@@ -197,6 +197,10 @@ static int pci_bus_alloc_from_region(struct pci_bus *bus, struct resource *res,
 
 		max = avail.end;
 
+		/* Don't bother if available space isn't large enough */
+		if (size > max - min_used + 1)
+			continue;
+
 		/* Ok, try it out.. */
 		ret = allocate_resource(r, res, size, min_used, max,
 					align, alignf, alignf_data);
@@ -288,8 +292,7 @@ bool pci_bus_clip_resource(struct pci_dev *dev, int idx)
 		res->end = end;
 		res->flags &= ~IORESOURCE_UNSET;
 		orig_res.flags &= ~IORESOURCE_UNSET;
-		pci_printk(KERN_DEBUG, dev, "%pR clipped to %pR\n",
-				 &orig_res, res);
+		pci_info(dev, "%pR clipped to %pR\n", &orig_res, res);
 
 		return true;
 	}
@@ -323,12 +326,8 @@ void pci_bus_add_device(struct pci_dev *dev)
 
 	dev->match_driver = true;
 	retval = device_attach(&dev->dev);
-	if (retval < 0 && retval != -EPROBE_DEFER) {
+	if (retval < 0 && retval != -EPROBE_DEFER)
 		pci_warn(dev, "device attach failed (%d)\n", retval);
-		pci_proc_detach_device(dev);
-		pci_remove_sysfs_dev_files(dev);
-		return;
-	}
 
 	pci_dev_assign_added(dev, true);
 }
@@ -418,11 +417,9 @@ struct pci_bus *pci_bus_get(struct pci_bus *bus)
 		get_device(&bus->dev);
 	return bus;
 }
-EXPORT_SYMBOL(pci_bus_get);
 
 void pci_bus_put(struct pci_bus *bus)
 {
 	if (bus)
 		put_device(&bus->dev);
 }
-EXPORT_SYMBOL(pci_bus_put);

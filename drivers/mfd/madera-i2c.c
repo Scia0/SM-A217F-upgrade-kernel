@@ -1,12 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * I2C bus interface to Cirrus Logic Madera codecs
  *
  * Copyright (C) 2015-2018 Cirrus Logic
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation; version 2.
  */
 
 #include <linux/device.h>
@@ -21,9 +17,9 @@
 
 #include "madera.h"
 
-static int madera_i2c_probe(struct i2c_client *i2c,
-			    const struct i2c_device_id *id)
+static int madera_i2c_probe(struct i2c_client *i2c)
 {
+	const struct i2c_device_id *id = i2c_client_get_device_id(i2c);
 	struct madera *madera;
 	const struct regmap_config *regmap_16bit_config = NULL;
 	const struct regmap_config *regmap_32bit_config = NULL;
@@ -65,6 +61,7 @@ static int madera_i2c_probe(struct i2c_client *i2c,
 			regmap_32bit_config = &cs47l90_32bit_i2c_regmap;
 		}
 		break;
+	case CS42L92:
 	case CS47L92:
 	case CS47L93:
 		if (IS_ENABLED(CONFIG_MFD_CS47L92)) {
@@ -91,7 +88,6 @@ static int madera_i2c_probe(struct i2c_client *i2c,
 	if (!madera)
 		return -ENOMEM;
 
-
 	madera->regmap = devm_regmap_init_i2c(i2c, regmap_16bit_config);
 	if (IS_ERR(madera->regmap)) {
 		ret = PTR_ERR(madera->regmap);
@@ -116,13 +112,11 @@ static int madera_i2c_probe(struct i2c_client *i2c,
 	return madera_dev_init(madera);
 }
 
-static int madera_i2c_remove(struct i2c_client *i2c)
+static void madera_i2c_remove(struct i2c_client *i2c)
 {
 	struct madera *madera = dev_get_drvdata(&i2c->dev);
 
 	madera_dev_exit(madera);
-
-	return 0;
 }
 
 static const struct i2c_device_id madera_i2c_id[] = {
@@ -131,6 +125,7 @@ static const struct i2c_device_id madera_i2c_id[] = {
 	{ "cs47l85", CS47L85 },
 	{ "cs47l90", CS47L90 },
 	{ "cs47l91", CS47L91 },
+	{ "cs42l92", CS42L92 },
 	{ "cs47l92", CS47L92 },
 	{ "cs47l93", CS47L93 },
 	{ "wm1840", WM1840 },
@@ -144,7 +139,7 @@ static struct i2c_driver madera_i2c_driver = {
 		.pm	= &madera_pm_ops,
 		.of_match_table	= of_match_ptr(madera_of_match),
 	},
-	.probe		= madera_i2c_probe,
+	.probe_new	= madera_i2c_probe,
 	.remove		= madera_i2c_remove,
 	.id_table	= madera_i2c_id,
 };

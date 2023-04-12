@@ -10,8 +10,6 @@
 #include <linux/module.h>
 #include <linux/suspend.h>
 #include <trace/events/power.h>
-#include <linux/wakeup_reason.h>
-#include <linux/debug-snapshot.h>
 
 static LIST_HEAD(syscore_ops_list);
 static DEFINE_MUTEX(syscore_ops_lock);
@@ -52,7 +50,7 @@ int syscore_suspend(void)
 	int ret = 0;
 
 	trace_suspend_resume(TPS("syscore_suspend"), 0, true);
-	pr_debug("Checking wakeup interrupts\n");
+	pm_pr_dbg("Checking wakeup interrupts\n");
 
 	/* Return error code if there are any wakeup interrupts pending. */
 	if (pm_wakeup_pending())
@@ -63,24 +61,19 @@ int syscore_suspend(void)
 
 	list_for_each_entry_reverse(ops, &syscore_ops_list, node)
 		if (ops->suspend) {
-			if (initcall_debug)
-				pr_info("PM: Calling %pF\n", ops->suspend);
-			dbg_snapshot_suspend("syscore_suspend", ops->suspend, NULL, 0, DSS_FLAG_IN);
+			pm_pr_dbg("Calling %pS\n", ops->suspend);
 			ret = ops->suspend();
-			dbg_snapshot_suspend("syscore_suspend", ops->suspend, NULL, 0, DSS_FLAG_OUT);
 			if (ret)
 				goto err_out;
 			WARN_ONCE(!irqs_disabled(),
-				"Interrupts enabled after %pF\n", ops->suspend);
+				"Interrupts enabled after %pS\n", ops->suspend);
 		}
 
 	trace_suspend_resume(TPS("syscore_suspend"), 0, false);
 	return 0;
 
  err_out:
-	log_suspend_abort_reason("System core suspend callback %pF failed",
-		ops->suspend);
-	pr_err("PM: System core suspend callback %pF failed.\n", ops->suspend);
+	pr_err("PM: System core suspend callback %pS failed.\n", ops->suspend);
 
 	list_for_each_entry_continue(ops, &syscore_ops_list, node)
 		if (ops->resume)
@@ -105,13 +98,10 @@ void syscore_resume(void)
 
 	list_for_each_entry(ops, &syscore_ops_list, node)
 		if (ops->resume) {
-			if (initcall_debug)
-				pr_info("PM: Calling %pF\n", ops->resume);
-			dbg_snapshot_suspend("syscore_resume", ops->resume, NULL, 0, DSS_FLAG_IN);
+			pm_pr_dbg("Calling %pS\n", ops->resume);
 			ops->resume();
-			dbg_snapshot_suspend("syscore_resume", ops->resume, NULL, 0, DSS_FLAG_OUT);
 			WARN_ONCE(!irqs_disabled(),
-				"Interrupts enabled after %pF\n", ops->resume);
+				"Interrupts enabled after %pS\n", ops->resume);
 		}
 	trace_suspend_resume(TPS("syscore_resume"), 0, false);
 }
@@ -130,10 +120,8 @@ void syscore_shutdown(void)
 	list_for_each_entry_reverse(ops, &syscore_ops_list, node)
 		if (ops->shutdown) {
 			if (initcall_debug)
-				pr_info("PM: Calling %pF\n", ops->shutdown);
-			dbg_snapshot_suspend("syscore_shutdown", ops->shutdown, NULL, 0, DSS_FLAG_IN);
+				pr_info("PM: Calling %pS\n", ops->shutdown);
 			ops->shutdown();
-			dbg_snapshot_suspend("syscore_shutdown", ops->shutdown, NULL, 0, DSS_FLAG_OUT);
 		}
 
 	mutex_unlock(&syscore_ops_lock);

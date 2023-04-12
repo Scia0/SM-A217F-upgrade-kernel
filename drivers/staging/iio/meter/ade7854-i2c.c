@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * ADE7854/58/68/78 Polyphase Multifunction Energy Metering IC Driver (I2C Bus)
  *
  * Copyright 2010 Analog Devices Inc.
- *
- * Licensed under the GPL-2 or later.
  */
 
 #include <linux/device.h>
@@ -62,7 +61,10 @@ static int ade7854_i2c_write_reg(struct device *dev,
 unlock:
 	mutex_unlock(&st->buf_lock);
 
-	return ret < 0 ? ret : 0;
+	if (ret < 0)
+		return ret;
+
+	return 0;
 }
 
 static int ade7854_i2c_read_reg(struct device *dev,
@@ -110,8 +112,7 @@ unlock:
 	return ret;
 }
 
-static int ade7854_i2c_probe(struct i2c_client *client,
-			     const struct i2c_device_id *id)
+static int ade7854_i2c_probe(struct i2c_client *client)
 {
 	struct ade7854_state *st;
 	struct iio_dev *indio_dev;
@@ -142,7 +143,7 @@ static struct i2c_driver ade7854_i2c_driver = {
 	.driver = {
 		.name = "ade7854",
 	},
-	.probe    = ade7854_i2c_probe,
+	.probe_new = ade7854_i2c_probe,
 	.id_table = ade7854_id,
 };
 module_i2c_driver(ade7854_i2c_driver);

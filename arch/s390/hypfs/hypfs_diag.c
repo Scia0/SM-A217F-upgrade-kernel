@@ -68,14 +68,6 @@ static inline __u8 info_blk_hdr__flags(enum diag204_format type, void *hdr)
 		return ((struct diag204_x_info_blk_hdr *)hdr)->flags;
 }
 
-static inline __u16 info_blk_hdr__pcpus(enum diag204_format type, void *hdr)
-{
-	if (type == DIAG204_INFO_SIMPLE)
-		return ((struct diag204_info_blk_hdr *)hdr)->phys_cpus;
-	else /* DIAG204_INFO_EXT */
-		return ((struct diag204_x_info_blk_hdr *)hdr)->phys_cpus;
-}
-
 /* Partition header */
 
 static inline int part_hdr__size(enum diag204_format type)
@@ -437,14 +429,13 @@ __init int hypfs_diag_init(void)
 	int rc;
 
 	if (diag204_probe()) {
-		pr_err("The hardware system does not support hypfs\n");
+		pr_info("The hardware system does not support hypfs\n");
 		return -ENODATA;
 	}
-	if (diag204_info_type == DIAG204_INFO_EXT) {
-		rc = hypfs_dbfs_create_file(&dbfs_file_d204);
-		if (rc)
-			return rc;
-	}
+
+	if (diag204_info_type == DIAG204_INFO_EXT)
+		hypfs_dbfs_create_file(&dbfs_file_d204);
+
 	if (MACHINE_IS_LPAR) {
 		rc = diag224_get_name_table();
 		if (rc) {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  it87.c - Part of lm_sensors, Linux kernel modules for hardware
  *           monitoring.
@@ -37,16 +38,6 @@
  *
  *  Copyright (C) 2001 Chris Gauthron
  *  Copyright (C) 2005-2010 Jean Delvare <jdelvare@suse.de>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -77,6 +68,10 @@ enum chips { it87, it8712, it8716, it8718, it8720, it8721, it8728, it8732,
 static unsigned short force_id;
 module_param(force_id, ushort, 0);
 MODULE_PARM_DESC(force_id, "Override the detected device ID");
+
+static bool ignore_resource_conflict;
+module_param(ignore_resource_conflict, bool, 0);
+MODULE_PARM_DESC(ignore_resource_conflict, "Ignore ACPI resource conflict");
 
 static struct platform_device *it87_pdev[2];
 
@@ -528,7 +523,7 @@ struct it87_data {
 	unsigned short addr;
 	const char *name;
 	struct mutex update_lock;
-	char valid;		/* !=0 if following fields are valid */
+	bool valid;		/* true if following fields are valid */
 	unsigned long last_updated;	/* In jiffies */
 
 	u16 in_scaled;		/* Internal voltage sensors are scaled */
@@ -571,6 +566,14 @@ struct it87_data {
 	u8 auto_pwm[NUM_AUTO_PWM][4];	/* [nr][3] is hard-coded */
 	s8 auto_temp[NUM_AUTO_PWM][5];	/* [nr][0] is point1_temp_hyst */
 };
+
+/* Board specific settings from DMI matching */
+struct it87_dmi_data {
+	u8 skip_pwm;		/* pwm channels to skip for this board  */
+};
+
+/* Global for results from DMI matching, if needed */
+static struct it87_dmi_data *dmi_data;
 
 static int adc_lsb(const struct it87_data *data, int nr)
 {
@@ -853,7 +856,7 @@ static struct it87_data *it87_update_device(struct device *dev)
 			data->vid &= 0x3f;
 		}
 		data->last_updated = jiffies;
-		data->valid = 1;
+		data->valid = true;
 	}
 
 	mutex_unlock(&data->update_lock);
@@ -989,7 +992,7 @@ static ssize_t set_temp(struct device *dev, struct device_attribute *attr,
 			regval |= 0x80;
 			it87_write_value(data, IT87_REG_BEEP_ENABLE, regval);
 		}
-		data->valid = 0;
+		data->valid = false;
 		reg = IT87_REG_TEMP_OFFSET[nr];
 		break;
 	}
@@ -1088,7 +1091,7 @@ static ssize_t set_temp_type(struct device *dev, struct device_attribute *attr,
 	it87_write_value(data, IT87_REG_TEMP_ENABLE, data->sensor);
 	if (has_temp_old_peci(data, nr))
 		it87_write_value(data, IT87_REG_TEMP_EXTRA, data->extra);
-	data->valid = 0;	/* Force cache refresh */
+	data->valid = false;	/* Force cache refresh */
 	mutex_unlock(&data->update_lock);
 	return count;
 }
@@ -1843,7 +1846,7 @@ static ssize_t clear_intrusion(struct device *dev,
 		config |= BIT(5);
 		it87_write_value(data, IT87_REG_CONFIG, config);
 		/* Invalidate cache to force re-read */
-		data->valid = 0;
+		data->valid = false;
 	}
 	mutex_unlock(&data->update_lock);
 
@@ -1990,7 +1993,7 @@ static SENSOR_DEVICE_ATTR(in9_label, S_IRUGO, show_label, NULL, 3);
 static umode_t it87_in_is_visible(struct kobject *kobj,
 				  struct attribute *attr, int index)
 {
-	struct device *dev = container_of(kobj, struct device, kobj);
+	struct device *dev = kobj_to_dev(kobj);
 	struct it87_data *data = dev_get_drvdata(dev);
 	int i = index / 5;	/* voltage index */
 	int a = index % 5;	/* attribute index */
@@ -2074,7 +2077,7 @@ static const struct attribute_group it87_group_in = {
 static umode_t it87_temp_is_visible(struct kobject *kobj,
 				    struct attribute *attr, int index)
 {
-	struct device *dev = container_of(kobj, struct device, kobj);
+	struct device *dev = kobj_to_dev(kobj);
 	struct it87_data *data = dev_get_drvdata(dev);
 	int i = index / 7;	/* temperature index */
 	int a = index % 7;	/* attribute index */
@@ -2135,7 +2138,7 @@ static const struct attribute_group it87_group_temp = {
 static umode_t it87_is_visible(struct kobject *kobj,
 			       struct attribute *attr, int index)
 {
-	struct device *dev = container_of(kobj, struct device, kobj);
+	struct device *dev = kobj_to_dev(kobj);
 	struct it87_data *data = dev_get_drvdata(dev);
 
 	if ((index == 2 || index == 3) && !data->has_vid)
@@ -2167,7 +2170,7 @@ static const struct attribute_group it87_group = {
 static umode_t it87_fan_is_visible(struct kobject *kobj,
 				   struct attribute *attr, int index)
 {
-	struct device *dev = container_of(kobj, struct device, kobj);
+	struct device *dev = kobj_to_dev(kobj);
 	struct it87_data *data = dev_get_drvdata(dev);
 	int i = index / 5;	/* fan index */
 	int a = index % 5;	/* attribute index */
@@ -2238,7 +2241,7 @@ static const struct attribute_group it87_group_fan = {
 static umode_t it87_pwm_is_visible(struct kobject *kobj,
 				   struct attribute *attr, int index)
 {
-	struct device *dev = container_of(kobj, struct device, kobj);
+	struct device *dev = kobj_to_dev(kobj);
 	struct it87_data *data = dev_get_drvdata(dev);
 	int i = index / 4;	/* pwm index */
 	int a = index % 4;	/* attribute index */
@@ -2299,7 +2302,7 @@ static const struct attribute_group it87_group_pwm = {
 static umode_t it87_auto_pwm_is_visible(struct kobject *kobj,
 					struct attribute *attr, int index)
 {
-	struct device *dev = container_of(kobj, struct device, kobj);
+	struct device *dev = kobj_to_dev(kobj);
 	struct it87_data *data = dev_get_drvdata(dev);
 	int i = index / 11;	/* pwm index */
 	int a = index % 11;	/* attribute index */
@@ -2398,7 +2401,6 @@ static int __init it87_find(int sioaddr, unsigned short *address,
 {
 	int err;
 	u16 chip_type;
-	const char *board_vendor, *board_name;
 	const struct it87_devices *config;
 
 	err = superio_enter(sioaddr);
@@ -2406,7 +2408,13 @@ static int __init it87_find(int sioaddr, unsigned short *address,
 		return err;
 
 	err = -ENODEV;
-	chip_type = force_id ? force_id : superio_inw(sioaddr, DEVID);
+	chip_type = superio_inw(sioaddr, DEVID);
+	/* check first for a valid chip before forcing chip id */
+	if (chip_type == 0xffff)
+		goto exit;
+
+	if (force_id)
+		chip_type = force_id;
 
 	switch (chip_type) {
 	case IT8705F_DEVID:
@@ -2811,24 +2819,9 @@ static int __init it87_find(int sioaddr, unsigned short *address,
 	if (sio_data->beep_pin)
 		pr_info("Beeping is supported\n");
 
-	/* Disable specific features based on DMI strings */
-	board_vendor = dmi_get_system_info(DMI_BOARD_VENDOR);
-	board_name = dmi_get_system_info(DMI_BOARD_NAME);
-	if (board_vendor && board_name) {
-		if (strcmp(board_vendor, "nVIDIA") == 0 &&
-		    strcmp(board_name, "FN68PT") == 0) {
-			/*
-			 * On the Shuttle SN68PT, FAN_CTL2 is apparently not
-			 * connected to a fan, but to something else. One user
-			 * has reported instant system power-off when changing
-			 * the PWM2 duty cycle, so we disable it.
-			 * I use the board name string as the trigger in case
-			 * the same board is ever used in other systems.
-			 */
-			pr_info("Disabling pwm2 due to hardware constraints\n");
-			sio_data->skip_pwm = BIT(1);
-		}
-	}
+	/* Set values based on DMI matches */
+	if (dmi_data)
+		sio_data->skip_pwm |= dmi_data->skip_pwm;
 
 exit:
 	superio_exit(sioaddr);
@@ -3188,7 +3181,7 @@ static int it87_probe(struct platform_device *pdev)
 	return PTR_ERR_OR_ZERO(hwmon_dev);
 }
 
-static void __maybe_unused it87_resume_sio(struct platform_device *pdev)
+static void it87_resume_sio(struct platform_device *pdev)
 {
 	struct it87_data *data = dev_get_drvdata(&pdev->dev);
 	int err;
@@ -3220,7 +3213,7 @@ static void __maybe_unused it87_resume_sio(struct platform_device *pdev)
 	superio_exit(data->sioaddr);
 }
 
-static int __maybe_unused it87_resume(struct device *dev)
+static int it87_resume(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct it87_data *data = dev_get_drvdata(dev);
@@ -3238,7 +3231,7 @@ static int __maybe_unused it87_resume(struct device *dev)
 	it87_start_monitoring(data);
 
 	/* force update */
-	data->valid = 0;
+	data->valid = false;
 
 	mutex_unlock(&data->update_lock);
 
@@ -3247,12 +3240,12 @@ static int __maybe_unused it87_resume(struct device *dev)
 	return 0;
 }
 
-static SIMPLE_DEV_PM_OPS(it87_dev_pm_ops, NULL, it87_resume);
+static DEFINE_SIMPLE_DEV_PM_OPS(it87_dev_pm_ops, NULL, it87_resume);
 
 static struct platform_driver it87_driver = {
 	.driver = {
 		.name	= DRVNAME,
-		.pm     = &it87_dev_pm_ops,
+		.pm     = pm_sleep_ptr(&it87_dev_pm_ops),
 	},
 	.probe	= it87_probe,
 };
@@ -3270,8 +3263,10 @@ static int __init it87_device_add(int index, unsigned short address,
 	int err;
 
 	err = acpi_check_resource_conflict(&res);
-	if (err)
-		return err;
+	if (err) {
+		if (!ignore_resource_conflict)
+			return err;
+	}
 
 	pdev = platform_device_alloc(DRVNAME, address);
 	if (!pdev)
@@ -3304,6 +3299,46 @@ exit_device_put:
 	return err;
 }
 
+/* callback function for DMI */
+static int it87_dmi_cb(const struct dmi_system_id *dmi_entry)
+{
+	dmi_data = dmi_entry->driver_data;
+
+	if (dmi_data && dmi_data->skip_pwm)
+		pr_info("Disabling pwm2 due to hardware constraints\n");
+
+	return 1;
+}
+
+/*
+ * On the Shuttle SN68PT, FAN_CTL2 is apparently not
+ * connected to a fan, but to something else. One user
+ * has reported instant system power-off when changing
+ * the PWM2 duty cycle, so we disable it.
+ * I use the board name string as the trigger in case
+ * the same board is ever used in other systems.
+ */
+static struct it87_dmi_data nvidia_fn68pt = {
+	.skip_pwm = BIT(1),
+};
+
+#define IT87_DMI_MATCH_VND(vendor, name, cb, data) \
+	{ \
+		.callback = cb, \
+		.matches = { \
+			DMI_EXACT_MATCH(DMI_BOARD_VENDOR, vendor), \
+			DMI_EXACT_MATCH(DMI_BOARD_NAME, name), \
+		}, \
+		.driver_data = data, \
+	}
+
+static const struct dmi_system_id it87_dmi_table[] __initconst = {
+	IT87_DMI_MATCH_VND("nVIDIA", "FN68PT", it87_dmi_cb, &nvidia_fn68pt),
+	{ }
+
+};
+MODULE_DEVICE_TABLE(dmi, it87_dmi_table);
+
 static int __init sm_it87_init(void)
 {
 	int sioaddr[2] = { REG_2E, REG_4E };
@@ -3315,6 +3350,8 @@ static int __init sm_it87_init(void)
 	err = platform_driver_register(&it87_driver);
 	if (err)
 		return err;
+
+	dmi_check_system(it87_dmi_table);
 
 	for (i = 0; i < ARRAY_SIZE(sioaddr); i++) {
 		memset(&sio_data, 0, sizeof(struct it87_sio_data));

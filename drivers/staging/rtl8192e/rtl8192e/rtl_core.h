@@ -1,24 +1,12 @@
-/******************************************************************************
+/* SPDX-License-Identifier: GPL-2.0 */
+/*
  * Copyright(c) 2008 - 2010 Realtek Corporation. All rights reserved.
  *
  * Based on the r8180 driver, which is:
  * Copyright 2004-2005 Andrea Merello <andrea.merello@gmail.com>, et al.
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * The full GNU General Public License is included in this distribution in the
- * file called LICENSE.
- *
- * Contact Information:
- * wlanfae <wlanfae@realtek.com>
- *****************************************************************************/
-
+ * Contact Information: wlanfae <wlanfae@realtek.com>
+ */
 #ifndef _RTL_CORE_H
 #define _RTL_CORE_H
 
@@ -246,15 +234,6 @@ struct rt_stats {
 	u32	CurrentShowTxate;
 };
 
-struct channel_access_setting {
-	u16 SIFS_Timer;
-	u16 DIFS_Timer;
-	u16 SlotTimeTimer;
-	u16 EIFS_Timer;
-	u16 CWminIndex;
-	u16 CWmaxIndex;
-};
-
 struct init_gain {
 	u8	xaagccore1;
 	u8	xbagccore1;
@@ -311,8 +290,8 @@ struct rtl819x_ops {
 	void (*tx_enable)(struct net_device *dev);
 	void (*interrupt_recognized)(struct net_device *dev,
 				     u32 *p_inta, u32 *p_intb);
-	bool (*TxCheckStuckHandler)(struct net_device *dev);
-	bool (*RxCheckStuckHandler)(struct net_device *dev);
+	bool (*tx_check_stuck_handler)(struct net_device *dev);
+	bool (*rx_check_stuck_handler)(struct net_device *dev);
 };
 
 struct r8192_priv {
@@ -321,9 +300,7 @@ struct r8192_priv {
 
 	bool		bfirst_init;
 	bool		bfirst_after_down;
-	bool		initialized_at_probe;
 	bool		being_init_adapter;
-	bool		bDriverIsGoingToUnload;
 
 	int		irq;
 	short	irq_enabled;
@@ -335,15 +312,10 @@ struct r8192_priv {
 	struct delayed_work		txpower_tracking_wq;
 	struct delayed_work		rfpath_check_wq;
 	struct delayed_work		gpio_change_rf_wq;
-
-	struct channel_access_setting ChannelAccessSetting;
-
 	struct rtl819x_ops			*ops;
 	struct rtllib_device			*rtllib;
 
 	struct work_struct				reset_wq;
-
-	struct log_int_8190 InterruptLog;
 
 	enum rt_customer_id CustomerID;
 
@@ -352,8 +324,6 @@ struct r8192_priv {
 	enum ht_channel_width CurrentChannelBW;
 	struct bb_reg_definition PHYRegDef[4];
 	struct rate_adaptive rate_adaptive;
-
-	enum acm_method AcmMethod;
 
 	struct rt_firmware			*pFirmware;
 	enum rtl819x_loopback LoopbackMode;
@@ -404,7 +374,7 @@ struct r8192_priv {
 	u16		ShortRetryLimit;
 	u16		LongRetryLimit;
 
-	bool		bHwRadioOff;
+	bool		hw_radio_off;
 	bool		blinked_ingpio;
 	u8		polling_timer_on;
 
@@ -422,8 +392,6 @@ struct r8192_priv {
 	short	chan;
 	short	sens;
 	short	max_sens;
-
-	u8 ScanDelay;
 	bool ps_force;
 
 	u32 irq_mask[2];
@@ -442,7 +410,7 @@ struct r8192_priv {
 
 	u16 basic_rate;
 	u8 short_preamble;
-	u8 dot11CurrentPreambleMode;
+	u8 dot11_current_preamble_mode;
 	u8 slot_time;
 	u16 SifsTime;
 
@@ -482,15 +450,11 @@ struct r8192_priv {
 
 	bool bTXPowerDataReadFromEEPORM;
 
-	u16 RegChannelPlan;
+	u16 reg_chnl_plan;
 	u16 ChannelPlan;
+	u8 hw_rf_off_action;
 
-	bool RegRfOff;
-	bool isRFOff;
-	bool bInPowerSaveMode;
-	u8 bHwRfOffAction;
-
-	bool RFChangeInProgress;
+	bool rf_change_in_progress;
 	bool SetRFPowerStateInProgress;
 	bool bdisable_nic;
 
@@ -502,7 +466,7 @@ struct r8192_priv {
 	u8 CCKPresentAttentuation_20Mdefault;
 	u8 CCKPresentAttentuation_40Mdefault;
 	s8 CCKPresentAttentuation_difference;
-	s8 CCKPresentAttentuation;
+	s8 cck_present_attn;
 	long undecorated_smoothed_pwdb;
 
 	u32 MCSTxPowerLevelOriginalOffset[6];
@@ -555,11 +519,9 @@ struct r8192_priv {
 
 	u32		reset_count;
 
-	enum reset_type ResetProgress;
-	bool		bForcedSilentReset;
-	bool		bDisableNormalResetCheck;
+	enum reset_type rst_progress;
 	u16		TxCounter;
-	u16		RxCounter;
+	u16		rx_ctr;
 	bool		bResetInProgress;
 	bool		force_reset;
 	bool		force_lps;
@@ -581,8 +543,8 @@ void rtl92e_writel(struct net_device *dev, int x, u32 y);
 
 void force_pci_posting(struct net_device *dev);
 
-void rtl92e_rx_enable(struct net_device *);
-void rtl92e_tx_enable(struct net_device *);
+void rtl92e_rx_enable(struct net_device *dev);
+void rtl92e_tx_enable(struct net_device *dev);
 
 void rtl92e_hw_sleep_wq(void *data);
 void rtl92e_commit(struct net_device *dev);
@@ -610,6 +572,6 @@ bool rtl92e_enable_nic(struct net_device *dev);
 bool rtl92e_disable_nic(struct net_device *dev);
 
 bool rtl92e_set_rf_state(struct net_device *dev,
-			 enum rt_rf_power_state StateToSet,
-			 RT_RF_CHANGE_SOURCE ChangeSource);
+			 enum rt_rf_power_state state_to_set,
+			 RT_RF_CHANGE_SOURCE change_source);
 #endif

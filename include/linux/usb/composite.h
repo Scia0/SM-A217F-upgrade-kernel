@@ -3,20 +3,6 @@
  * composite.h -- framework for usb gadgets which are composite devices
  *
  * Copyright (C) 2006-2008 David Brownell
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
 #ifndef	__LINUX_USB_COMPOSITE_H
@@ -41,11 +27,6 @@
 #include <linux/usb/gadget.h>
 #include <linux/log2.h>
 #include <linux/configfs.h>
-
-#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
-#include <linux/usb_notify.h>
-#include <linux/gpio.h>
-#endif
 
 /*
  * USB function drivers should return USB_GADGET_DELAYED_STATUS if they
@@ -202,11 +183,7 @@ struct usb_function {
 	struct usb_descriptor_header	**ssp_descriptors;
 
 	struct usb_configuration	*config;
-#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
-	int (*set_intf_num)(struct usb_function *f,
-			int intf_num, int index_num);
-	int (*set_config_desc)(int conf_num);
-#endif
+
 	struct usb_os_desc_table	*os_desc_table;
 	unsigned			os_desc_n;
 
@@ -223,12 +200,6 @@ struct usb_function {
 					struct usb_function *);
 	void			(*free_func)(struct usb_function *f);
 	struct module		*mod;
-
-#ifdef CONFIG_USB_CONFIGFS_UEVENT
-	/* OPtional function for vendor specific processing */
-	int			(*ctrlrequest)(struct usb_function *,
-					const struct usb_ctrlrequest *);
-#endif
 
 	/* runtime state management */
 	int			(*set_alt)(struct usb_function *,
@@ -286,7 +257,7 @@ int config_ep_by_speed(struct usb_gadget *g, struct usb_function *f,
  * @bConfigurationValue: Copied into configuration descriptor.
  * @iConfiguration: Copied into configuration descriptor.
  * @bmAttributes: Copied into configuration descriptor.
- * @MaxPower: Power consumtion in mA. Used to compute bMaxPower in the
+ * @MaxPower: Power consumption in mA. Used to compute bMaxPower in the
  *	configuration descriptor after considering the bus speed.
  * @cdev: assigned by @usb_add_config() before calling @bind(); this is
  *	the device associated with this configuration.
@@ -452,7 +423,7 @@ static inline struct usb_composite_driver *to_cdriver(
 #define OS_STRING_IDX			0xEE
 
 /**
- * struct usb_composite_device - represents one composite usb gadget
+ * struct usb_composite_dev - represents one composite usb gadget
  * @gadget: read-only, abstracts the gadget's usb peripheral controller
  * @req: used for control responses; buffer is pre-allocated
  * @os_desc_req: used for OS descriptors responses; buffer is pre-allocated
@@ -522,14 +493,7 @@ struct usb_composite_dev {
 	 * data/status stages till delayed_status is zero.
 	 */
 	int				delayed_status;
-#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
-	/* used by enable_store function of android.c
-	 * to avoid signalling switch changes
-	 */
-	bool				mute_switch;
-	bool				force_disconnect;
-	bool				cleanup_flag;
-#endif
+
 	/* protects deactivations and delayed_status counts*/
 	spinlock_t			lock;
 
@@ -547,6 +511,8 @@ extern struct usb_string *usb_gstrings_attach(struct usb_composite_dev *cdev,
 extern int usb_string_ids_n(struct usb_composite_dev *c, unsigned n);
 
 extern void composite_disconnect(struct usb_gadget *gadget);
+extern void composite_reset(struct usb_gadget *gadget);
+
 extern int composite_setup(struct usb_gadget *gadget,
 		const struct usb_ctrlrequest *ctrl);
 extern void composite_suspend(struct usb_gadget *gadget);
@@ -595,8 +561,8 @@ static inline u16 get_default_bcdDevice(void)
 {
 	u16 bcdDevice;
 
-	bcdDevice = bin2bcd((LINUX_VERSION_CODE >> 16 & 0xff)) << 8;
-	bcdDevice |= bin2bcd((LINUX_VERSION_CODE >> 8 & 0xff));
+	bcdDevice = bin2bcd(LINUX_VERSION_MAJOR) << 8;
+	bcdDevice |= bin2bcd(LINUX_VERSION_PATCHLEVEL);
 	return bcdDevice;
 }
 
@@ -612,14 +578,9 @@ struct usb_function_instance {
 	struct config_group group;
 	struct list_head cfs_list;
 	struct usb_function_driver *fd;
-	struct usb_function *f;
 	int (*set_inst_name)(struct usb_function_instance *inst,
 			      const char *name);
 	void (*free_func_inst)(struct usb_function_instance *inst);
-#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
-	int (*set_inst_eth_addr)(struct usb_function_instance *inst,
-		       u8 *ethaddr);
-#endif
 };
 
 void usb_function_unregister(struct usb_function_driver *f);

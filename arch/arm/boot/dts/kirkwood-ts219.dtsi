@@ -86,7 +86,7 @@
 	status = "okay";
 
 	ethphy0: ethernet-phy@X {
-                /* overwrite reg property in board file */
+		/* overwrite reg property in board file */
 	};
 };
 
@@ -98,9 +98,17 @@
 };
 
 &pciec {
-        status = "okay";
+	status = "okay";
 };
 
 &pcie0 {
 	status = "okay";
+};
+
+&rtc {
+	/*
+	 * There is a s35390a available on the i2c bus, the internal rtc isn't
+	 * working (probably no crystal assembled).
+	 */
+	status = "disabled";
 };

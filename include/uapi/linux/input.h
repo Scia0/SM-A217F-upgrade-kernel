@@ -20,112 +20,6 @@
 #include "input-event-codes.h"
 
 /*
- * sys/class/sec/tsp/support_feature
- * bit value should be made a promise with InputFramework.
- */
-#define INPUT_FEATURE_ENABLE_SETTINGS_AOT	(1 << 0) /* Double tap wakeup settings */
-#define INPUT_FEATURE_ENABLE_PRESSURE		(1 << 1) /* homekey pressure */
-#define INPUT_FEATURE_ENABLE_SYNC_RR120		(1 << 2) /* sync reportrate 120hz */
-#define INPUT_FEATURE_ENABLE_VRR		(1 << 3) /* variable refresh rate (support 240hz) */
-
-#define INPUT_FEATURE_SUPPORT_OPEN_SHORT_TEST		(1 << 8) /* open/short test support */
-#define INPUT_FEATURE_SUPPORT_MIS_CALIBRATION_TEST	(1 << 9) /* mis-calibration test support */
-#define INPUT_FEATURE_ENABLE_MULTI_CALIBRATION		(1 << 10) /* multi calibration support */
-
-/*
- * sec Log
- */
-#define SECLOG			"[sec_input]"
-#define INPUT_LOG_BUF_SIZE	512
-
-#ifdef CONFIG_SEC_DEBUG_TSP_LOG
-#include <linux/input/sec_tsp_log.h>
-
-
-#define input_dbg(mode, dev, fmt, ...)						\
-({										\
-	static char input_log_buf[INPUT_LOG_BUF_SIZE];				\
-	snprintf(input_log_buf, sizeof(input_log_buf), "%s %s", SECLOG, fmt);	\
-	dev_dbg(dev, input_log_buf, ## __VA_ARGS__);				\
-	if (mode) {								\
-		if (dev)							\
-			snprintf(input_log_buf, sizeof(input_log_buf), "%s %s",	\
-					dev_driver_string(dev), dev_name(dev));	\
-		else								\
-			snprintf(input_log_buf, sizeof(input_log_buf), "NULL");	\
-		sec_debug_tsp_log_msg(input_log_buf, fmt, ## __VA_ARGS__);	\
-	}									\
-})
-#define input_info(mode, dev, fmt, ...)						\
-({										\
-	static char input_log_buf[INPUT_LOG_BUF_SIZE];				\
-	snprintf(input_log_buf, sizeof(input_log_buf), "%s %s", SECLOG, fmt);	\
-	dev_info(dev, input_log_buf, ## __VA_ARGS__);				\
-	if (mode) {								\
-		if (dev)							\
-			snprintf(input_log_buf, sizeof(input_log_buf), "%s %s",	\
-					dev_driver_string(dev), dev_name(dev));	\
-		else								\
-			snprintf(input_log_buf, sizeof(input_log_buf), "NULL");	\
-		sec_debug_tsp_log_msg(input_log_buf, fmt, ## __VA_ARGS__);	\
-	}									\
-})
-#define input_err(mode, dev, fmt, ...)						\
-({										\
-	static char input_log_buf[INPUT_LOG_BUF_SIZE];				\
-	snprintf(input_log_buf, sizeof(input_log_buf), "%s %s", SECLOG, fmt);	\
-	dev_err(dev, input_log_buf, ## __VA_ARGS__);				\
-	if (mode) {								\
-		if (dev)							\
-			snprintf(input_log_buf, sizeof(input_log_buf), "%s %s",	\
-					dev_driver_string(dev), dev_name(dev));	\
-		else								\
-			snprintf(input_log_buf, sizeof(input_log_buf), "NULL");	\
-		sec_debug_tsp_log_msg(input_log_buf, fmt, ## __VA_ARGS__);	\
-	}									\
-})
-#define input_raw_info(mode, dev, fmt, ...)					\
-({										\
-	static char input_log_buf[INPUT_LOG_BUF_SIZE];				\
-	snprintf(input_log_buf, sizeof(input_log_buf), "%s %s", SECLOG, fmt);	\
-	dev_info(dev, input_log_buf, ## __VA_ARGS__);				\
-	if (mode) { 							\
-		if (dev)							\
-			snprintf(input_log_buf, sizeof(input_log_buf), "%s %s", \
-					dev_driver_string(dev), dev_name(dev)); \
-		else								\
-			snprintf(input_log_buf, sizeof(input_log_buf), "NULL"); \
-		sec_debug_tsp_log_msg(input_log_buf, fmt, ## __VA_ARGS__);	\
-		sec_debug_tsp_raw_data_msg(input_log_buf, fmt, ## __VA_ARGS__); \
-	}									\
-})
-#define input_log_fix() {}
-#define input_raw_data_clear() sec_tsp_raw_data_clear()
-#else
-#define input_dbg(mode, dev, fmt, ...)						\
-({										\
-	static char input_log_buf[INPUT_LOG_BUF_SIZE];				\
-	snprintf(input_log_buf, sizeof(input_log_buf), "%s %s", SECLOG, fmt);	\
-	dev_dbg(dev, input_log_buf, ## __VA_ARGS__);				\
-})
-#define input_info(mode, dev, fmt, ...)						\
-({										\
-	static char input_log_buf[INPUT_LOG_BUF_SIZE];				\
-	snprintf(input_log_buf, sizeof(input_log_buf), "%s %s", SECLOG, fmt);	\
-	dev_info(dev, input_log_buf, ## __VA_ARGS__);				\
-})
-#define input_err(mode, dev, fmt, ...)						\
-({										\
-	static char input_log_buf[INPUT_LOG_BUF_SIZE];				\
-	snprintf(input_log_buf, sizeof(input_log_buf), "%s %s", SECLOG, fmt);	\
-	dev_err(dev, input_log_buf, ## __VA_ARGS__);				\
-})
-#define input_raw_info(mode, dev, fmt, ...) input_info(mode, dev, fmt, ## __VA_ARGS__)
-#define input_log_fix() {}
-#define input_raw_data_clear() sec_tsp_raw_data_clear()
-#endif
-
-/*
  * The event structure itself
  * Note that __USE_TIME_BITS64 is defined by libc based on
  * application's request to use 64 bit time_t.
@@ -184,13 +78,16 @@ struct input_id {
  * Note that input core does not clamp reported values to the
  * [minimum, maximum] limits, such task is left to userspace.
  *
- * The default resolution for main axes (ABS_X, ABS_Y, ABS_Z)
- * is reported in units per millimeter (units/mm), resolution
- * for rotational axes (ABS_RX, ABS_RY, ABS_RZ) is reported
- * in units per radian.
+ * The default resolution for main axes (ABS_X, ABS_Y, ABS_Z,
+ * ABS_MT_POSITION_X, ABS_MT_POSITION_Y) is reported in units
+ * per millimeter (units/mm), resolution for rotational axes
+ * (ABS_RX, ABS_RY, ABS_RZ) is reported in units per radian.
+ * The resolution for the size axes (ABS_MT_TOUCH_MAJOR,
+ * ABS_MT_TOUCH_MINOR, ABS_MT_WIDTH_MAJOR, ABS_MT_WIDTH_MINOR)
+ * is reported in units per millimeter (units/mm).
  * When INPUT_PROP_ACCELEROMETER is set the resolution changes.
  * The main axes (ABS_X, ABS_Y, ABS_Z) are then reported in
- * in units per g (units/g) and in units per degree per second
+ * units per g (units/g) and in units per degree per second
  * (units/deg/s) for rotational axes (ABS_RX, ABS_RY, ABS_RZ).
  */
 struct input_absinfo {
@@ -344,13 +241,6 @@ struct input_mask {
 #define EVIOCSMASK		_IOW('E', 0x93, struct input_mask)	/* Set event-masks */
 
 #define EVIOCSCLOCKID		_IOW('E', 0xa0, int)			/* Set clockid to be used for timestamps */
-#define KEY_SIDE_GESTURE_RIGHT	0x1ca
-#define KEY_SIDE_GESTURE_LEFT	0x1cb
-#define KEY_SIDE_GESTURE	0x1c6
-#define KEY_BLACK_UI_GESTURE	0x1c7
-#define SW_GLOVE		0x0f	/* set = glove mode */
-#define ABS_MT_PALM		0x3e	/* palm touch */
-#define ABS_MT_GRIP		0x3f	/* grip touch */
 
 /*
  * IDs.
@@ -381,6 +271,10 @@ struct input_mask {
 #define BUS_GSC			0x1A
 #define BUS_ATARI		0x1B
 #define BUS_SPI			0x1C
+#define BUS_RMI			0x1D
+#define BUS_CEC			0x1E
+#define BUS_INTEL_ISHTP		0x1F
+#define BUS_AMD_SFH		0x20
 
 /*
  * MT_TOOL types
